@@ -14,7 +14,8 @@ public class prefixSumSort01 {
     }
 
     static void sort_arr(int[] arr){
-        int l = 0, r = arr.length - 1;
+        int l = 0;
+        int r = arr.length - 1;
         while(l < r) {
             if(arr[l] == 1 && arr[r] == 0) {
                 swap(arr, l, r);
