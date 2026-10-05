@@ -70,8 +70,12 @@ string stringToBinary(string text)
         for (int i = 7; i >= 0; i--)
         {
 
-            
-            if (ch & (1 << i)) // This checks whether the i-th bit is 1 or 0.
+            // (1 << i) creates a value with
+            // the i-th bit set to 1.
+            //
+            // The '&' operator checks whether
+            // the corresponding bit of 'ch' is 1.
+            if (ch & (1 << i))
             {
                 // If the bit is 1,
                 // add '1' to the binary string.
@@ -128,9 +132,11 @@ string calculateCRC(string data)
 
 
     // Perform modulo-2 division.
-    // CRC division is NOT normal binary division.
+    //
     // We move from left to right through the data.
-    for (int i = 0; i <= (int)temp.length() - n; i++)
+    for (int i = 0;
+         i <= (int)temp.length() - n;
+         i++)
     {
 
         // We perform XOR with the generator
@@ -180,11 +186,13 @@ string calculateCRC(string data)
 
 int main()
 {
-    // This variable stores the socket descriptorused by the client for communication.
+    // This variable stores the socket descriptor
+    // used by the client for communication.
     int clientSocket;
 
 
-    // Structure used to store the server's  IP address and port information.
+    // Structure used to store the server's
+    // IP address and port information.
     struct sockaddr_in serverAddress;
 
 
@@ -297,9 +305,7 @@ int main()
         AF_INET,
         SOCK_STREAM,
         0
-    ); // afinet means Ipv4 addreess family,  I use an IPv4 TCP socket.
-    // AF_INET specifies IPv4 and SOCK_STREAM specifies TCP."
-    // 0 Means use the default protocol for this socket type, which is TCP.
+    );
 
 
     // Check if socket creation failed.
@@ -328,18 +334,18 @@ int main()
     //
     // Server is listening on port 8080.
     //
-    // htons() converts the port number  into network byte order. Host TO Network Short.
-    // htons converts the port number from host byte order to network byte order.
+    // htons() converts the port number
+    // into network byte order.
     serverAddress.sin_port = htons(8080);
 
 
     // Specify the IP address of the server.
     //
-    // 127.0.0.8 is a loopback address,
+    // 127.0.0.7 is a loopback address,
     // so the communication is happening
     // locally on the same computer.
     serverAddress.sin_addr.s_addr =
-        inet_addr("127.0.0.8");
+        inet_addr("127.0.0.7");
 
 
     // ======================================================
@@ -426,6 +432,7 @@ int main()
 
 
     // Initialize the buffer with zeros.
+    //
     // This removes any garbage values
     // that may be present in memory.
     memset(
@@ -436,9 +443,13 @@ int main()
 
 
     // Receive the result from the receiver.
+    //
     // The receiver will send either:
+    //
     // "No Error Detected."
+    //
     // OR
+    //
     // "Transmission Error Detected!"
     int bytesReceived = recv(
         clientSocket,
