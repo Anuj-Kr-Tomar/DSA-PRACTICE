@@ -1,417 +1,146 @@
-#include <stdio.h>      // Used for printf()
-#include <stdlib.h>     // General utility functions
-#include <string.h>     // Used for strcpy(), strcmp(), strlen()
-#include <arpa/inet.h>  // Used for socket address functions
-#include <unistd.h>     // Used for close()
+#include <iostream>       // Provides cout and endl for output.
+#include <cstdlib>        // Provides general utility functions.
+#include <cstring>        // Provides strcpy(), strcmp(), strlen(), etc.
+#include <arpa/inet.h>    // Provides IPv4 socket/network functions.
+#include <unistd.h>       // Provides close().
 
+using namespace std;      // Lets us use cout instead of std::cout.
 
-// -----------------------------------------
-// CONSTANTS
-// -----------------------------------------
+#define PORT 9000         // Receiver UDP port.
+#define TOTAL_FRAMES 8    // Total number of frames.
 
-// Receiver will listen on port 9000.
-#define PORT 9000
-
-// Total number of frames expected.
-#define TOTAL_FRAMES 8
-
-
-int main()
+int main()                  // Program starts here.
 {
-    // -----------------------------------------
-    // VARIABLE DECLARATIONS
-    // -----------------------------------------
+    int sock;               // Stores the socket descriptor.
+    int expected = 0;       // GBN: next frame expected by receiver.
+    int received[TOTAL_FRAMES] = {0}; // SR: 0 = not received, 1 = received/buffered.
+    char buffer[50];        // Stores received messages.
+    char protocol[10];      // Stores "GBN" or "SR".
+    struct sockaddr_in receiver{}, sender{}; // Stores IPv4 address information.
+    socklen_t length = sizeof(sender); // Stores sender address size.
 
-    // Socket descriptor.
-    // It is used for communication.
-    int sock;
+    // CREATE SOCKET
+    sock = socket(AF_INET, SOCK_DGRAM, 0); // Creates an IPv4 UDP socket.
 
-
-    // 'expected' represents the next frame
-    // that the receiver is expecting in order.
-    //
-    // Initially receiver expects frame 0.
-    int expected = 0;
-
-
-    // This array is mainly used for
-    // Selective Repeat.
-    //
-    // received[i] tells whether frame i
-    // has been received.
-    //
-    // 0 -> not received
-    // 1 -> received
-    int received[TOTAL_FRAMES] = {0};
-
-
-    // Buffer stores received messages.
-    //
-    // Examples:
-    // "GBN"
-    // "SR"
-    // "DATA:2"
-    char buffer[50];
-
-
-    // Stores the selected protocol.
-    //
-    // It will contain:
-    // "GBN" or "SR"
-    char protocol[10];
-
-
-    // Structure for receiver's IP address and port.
-    struct sockaddr_in receiver;
-
-
-    // Structure used to store sender's address.
-    struct sockaddr_in sender;
-
-
-    // Stores size of sender address.
-    socklen_t length = sizeof(sender);
-
-
-    // -----------------------------------------
-    // CREATE UDP SOCKET
-    // -----------------------------------------
-
-    // Create a UDP socket.
-    //
-    // AF_INET    -> IPv4
-    // SOCK_DGRAM -> UDP
-    // 0          -> default UDP protocol
-    sock = socket(AF_INET, SOCK_DGRAM, 0);
-
-
-    // -----------------------------------------
-    // SET RECEIVER ADDRESS
-    // -----------------------------------------
-
-    // Use IPv4.
-    receiver.sin_family = AF_INET;
-
-
-    // Receiver will listen on port 9000.
-    receiver.sin_port = htons(PORT);
-
-
-    // Receiver is running on local machine.
-    receiver.sin_addr.s_addr = inet_addr("127.0.0.7");
-
-
-    // -----------------------------------------
-    // BIND RECEIVER SOCKET
-    // -----------------------------------------
-
-    // bind() connects the socket with
-    // receiver's IP address and port.
-    //
-    // After this, receiver can listen
-    // for incoming UDP packets on port 9000.
-    bind(sock,
-         (struct sockaddr *)&receiver,
-         sizeof(receiver));
-
-
-    // -----------------------------------------
-    // DISPLAY PROJECT TITLE
-    // -----------------------------------------
-
-    printf("=====================================\n");
-    printf("       SLIDING WINDOW RECEIVER       \n");
-    printf("=====================================\n");
-
-
-    printf("\nWaiting for sender...\n");
-
-
-    // -----------------------------------------
-    // RECEIVE PROTOCOL NAME
-    // -----------------------------------------
-
-    // First, receiver waits for sender to tell
-    // which protocol is being used.
-    //
-    // Sender sends either:
-    //
-    // "GBN"
-    //
-    // OR
-    //
-    // "SR"
-    int n = recvfrom(sock,
-                     buffer,
-                     sizeof(buffer) - 1,
-                     0,
-                     (struct sockaddr *)&sender,
-                     &length);
-
-
-    // Add null character at the end
-    // to make buffer a proper C string.
-    buffer[n] = '\0';
-
-
-    // Copy received protocol into protocol variable.
-    strcpy(protocol, buffer);
-
-
-    printf("\nProtocol: %s\n", protocol);
-
-
-    // =================================================
-    //                 GO-BACK-N
-    // =================================================
-
-    // Check whether sender selected GBN.
-    if(strcmp(protocol, "GBN") == 0)
+    if (sock < 0) // Checks whether socket creation failed.
     {
-        printf("\n--- Go Back N Receiver ---\n");
+        perror("Socket creation failed"); // Prints the system error.
+        return 1; // Exits with an error.
+    }
 
+    // RECEIVER ADDRESS
+    receiver.sin_family = AF_INET; // Uses IPv4.
+    receiver.sin_port = htons(PORT); // Converts port 9000 to network byte order.
+    receiver.sin_addr.s_addr = inet_addr("127.0.0.7"); // Sets receiver IP.
 
-        // Continue until all 8 frames are received
-        // in correct order.
-        while(expected < TOTAL_FRAMES)
+    if (bind(sock, (struct sockaddr *)&receiver, sizeof(receiver)) < 0) // Binds socket to IP and port.
+    {
+        perror("Receiver bind failed"); // Prints bind error.
+        close(sock); // Closes socket.
+        return 1; // Exits with an error.
+    }
+
+    cout << "=====================================\n"; // Prints separator.
+    cout << " SLIDING WINDOW RECEIVER\n"; // Prints receiver heading.
+    cout << "=====================================\n"; // Prints separator.
+    cout << "Roll Number : 7\n"; // Displays roll number.
+    cout << "Receiver IP : 127.0.0.7\n"; // Displays receiver IP.
+    cout << "Receiver Port: 9000\n"; // Displays receiver port.
+    cout << "\nWaiting for sender...\n"; // Indicates waiting state.
+
+    // RECEIVE PROTOCOL
+    int n = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr *)&sender, &length); // Receives GBN/SR.
+
+    if (n <= 0) // Checks whether reception failed.
+    {
+        cout << "Failed to receive protocol.\n"; // Displays failure.
+        close(sock); // Closes socket.
+        return 1; // Exits.
+    }
+
+    buffer[n] = '\0'; // Terminates the received string.
+    strcpy(protocol, buffer); // Copies protocol into protocol variable.
+    cout << "\nProtocol: " << protocol << endl; // Displays selected protocol.
+
+    // GO BACK N
+    if (strcmp(protocol, "GBN") == 0) // Checks whether GBN was selected.
+    {
+        cout << "\n--- GO BACK N RECEIVER ---\n"; // Displays GBN heading.
+
+        while (expected < TOTAL_FRAMES) // Runs until all frames are received in order.
         {
+            n = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr *)&sender, &length); // Receives DATA frame.
 
-            // -----------------------------------------
-            // RECEIVE FRAME
-            // -----------------------------------------
+            if (n <= 0) // Checks receive failure.
+                continue; // Waits for another frame.
 
-            // Wait for a frame from sender.
-            n = recvfrom(sock,
-                         buffer,
-                         sizeof(buffer) - 1,
-                         0,
-                         (struct sockaddr *)&sender,
-                         &length);
+            buffer[n] = '\0'; // Terminates received string.
+            int frame; // Stores frame number.
+            sscanf(buffer, "DATA:%d", &frame); // Extracts frame number from DATA:n.
+            cout << "\nReceived DATA " << frame << endl; // Displays received frame.
 
-
-            // Add null character at the end.
-            buffer[n] = '\0';
-
-
-            // Variable to store frame number.
-            int frame;
-
-
-            // Extract frame number from message.
-            //
-            // Example:
-            // "DATA:3"
-            //
-            // frame becomes 3.
-            sscanf(buffer, "DATA:%d", &frame);
-
-
-            printf("Received Frame %d\n", frame);
-
-
-            // -----------------------------------------
-            // CHECK WHETHER FRAME IS EXPECTED
-            // -----------------------------------------
-
-            // If received frame is exactly the frame
-            // we were expecting...
-            if(frame == expected)
+            if (frame == expected) // Accepts only the expected frame.
             {
+                cout << "Frame " << frame << " accepted\n"; // Reports acceptance.
 
-                printf("Frame %d accepted\n", frame);
-
-
-                // Create ACK message.
-                //
-                // Example:
-                // Frame 3
-                // ACK = "ACK:3"
-                sprintf(buffer, "ACK:%d", frame);
-
-
-                // Send ACK back to sender.
-                sendto(sock,
-                       buffer,
-                       strlen(buffer),
-                       0,
-                       (struct sockaddr *)&sender,
-                       length);
-
-
-                // Now receiver expects the next frame.
-                //
-                // Example:
-                // expected = 3
-                // after accepting frame 3:
-                // expected = 4
-                expected++;
+                int ackNumber = frame + 1; // ACK n+1 acknowledges DATA n.
+                sprintf(buffer, "ACK:%d", ackNumber); // Creates ACK message.
+                sendto(sock, buffer, strlen(buffer), 0, (struct sockaddr *)&sender, length); // Sends ACK.
+                cout << "Sent ACK " << ackNumber << endl; // Displays ACK.
+                expected++; // Moves expected frame forward.
             }
-
-
-            // -----------------------------------------
-            // OUT-OF-ORDER FRAME
-            // -----------------------------------------
-
-            else
+            else // Executes for an out-of-order frame.
             {
-                // The received frame is not the frame
-                // we are currently expecting.
-                //
-                // In Go-Back-N, out-of-order frames
-                // are discarded.
-                printf("Frame %d discarded\n", frame);
-
-
-                // Send ACK for the last correctly
-                // received frame.
-                //
-                // Example:
-                // expected = 4
-                //
-                // Receiver got frame 6.
-                // Frame 4 is missing.
-                //
-                // Receiver sends:
-                // ACK:3
-                //
-                // This tells sender that frame 3
-                // was the last correctly received
-                // frame in order.
-                sprintf(buffer, "ACK:%d", expected - 1);
-
-
-                // Send ACK to sender.
-                sendto(sock,
-                       buffer,
-                       strlen(buffer),
-                       0,
-                       (struct sockaddr *)&sender,
-                       length);
+                cout << "Frame " << frame << " discarded\n"; // GBN discards out-of-order frames.
+                sprintf(buffer, "ACK:%d", expected); // Sends ACK for the next expected frame.
+                sendto(sock, buffer, strlen(buffer), 0, (struct sockaddr *)&sender, length); // Sends duplicate/cumulative ACK.
+                cout << "Sent ACK " << expected << endl; // Displays ACK.
             }
         }
     }
 
-
-    // =================================================
-    //              SELECTIVE REPEAT
-    // =================================================
-
-    // Check whether sender selected SR.
-    else if(strcmp(protocol, "SR") == 0)
+    // SELECTIVE REPEAT
+    else if (strcmp(protocol, "SR") == 0) // Checks whether SR was selected.
     {
-        printf("\n--- Selective Repeat Receiver ---\n");
+        cout << "\n--- SELECTIVE REPEAT RECEIVER ---\n"; // Displays SR heading.
 
-
-        // Continue until all frames have been
-        // received and delivered.
-        while(expected < TOTAL_FRAMES)
+        while (expected < TOTAL_FRAMES) // Runs until all frames can be delivered in order.
         {
+            n = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr *)&sender, &length); // Receives DATA.
 
-            // -----------------------------------------
-            // RECEIVE FRAME
-            // -----------------------------------------
+            if (n <= 0) // Checks receive failure.
+                continue; // Waits for another packet.
 
-            n = recvfrom(sock,
-                         buffer,
-                         sizeof(buffer) - 1,
-                         0,
-                         (struct sockaddr *)&sender,
-                         &length);
+            buffer[n] = '\0'; // Terminates received string.
+            int frame; // Stores frame number.
+            sscanf(buffer, "DATA:%d", &frame); // Extracts frame number.
+            cout << "\nReceived DATA " << frame << endl; // Displays received frame.
 
-
-            // Add null character to the received string.
-            buffer[n] = '\0';
-
-
-            // Variable to store received frame number.
-            int frame;
-
-
-            // Extract frame number.
-            //
-            // Example:
-            // "DATA:5"
-            //
-            // frame becomes 5.
-            sscanf(buffer, "DATA:%d", &frame);
-
-
-            printf("Received Frame %d\n", frame);
-
-
-            // -----------------------------------------
-            // CHECK WHETHER FRAME IS ALREADY RECEIVED
-            // -----------------------------------------
-
-            // If this frame has not been received before...
-            if(received[frame] == 0)
+            if (frame >= 0 && frame < TOTAL_FRAMES) // Accepts valid frame numbers 0 to 7.
             {
+                if (received[frame] == 0) // Checks whether this is a new frame.
+                {
+                    received[frame] = 1; // Marks frame as received/buffered.
+                    cout << "Frame " << frame << " accepted and buffered\n"; // Reports buffering.
 
-                // Mark this frame as received.
-                received[frame] = 1;
+                    int ackNumber = frame + 1; // Calculates ACK number.
+                    sprintf(buffer, "ACK:%d", ackNumber); // Creates ACK message.
+                    sendto(sock, buffer, strlen(buffer), 0, (struct sockaddr *)&sender, length); // Sends ACK.
+                    cout << "Sent ACK " << ackNumber << endl; // Displays ACK.
+                }
 
-
-                // In Selective Repeat,
-                // even an out-of-order frame is accepted
-                // and stored/buffered.
-                printf("Frame %d accepted and buffered\n",
-                       frame);
-
-
-                // Create ACK for this exact frame.
-                //
-                // Example:
-                // Frame 5
-                // ACK:5
-                sprintf(buffer, "ACK:%d", frame);
-
-
-                // Send ACK back to sender.
-                sendto(sock,
-                       buffer,
-                       strlen(buffer),
-                       0,
-                       (struct sockaddr *)&sender,
-                       length);
-            }
-
-
-            // -----------------------------------------
-            // DELIVER FRAMES IN ORDER
-            // -----------------------------------------
-
-            // Now check whether the frame we are
-            // currently expecting has been received.
-            //
-            // If yes, we can deliver it.
-            //
-            // We continue moving forward while
-            // consecutive frames are available.
-            while(expected < TOTAL_FRAMES &&
-                  received[expected] == 1)
-            {
-
-                printf("Frame %d delivered\n", expected);
-
-
-                // Move to next expected frame.
-                expected++;
+                while (expected < TOTAL_FRAMES && received[expected] == 1) // Delivers consecutive received frames.
+                {
+                    cout << "Frame " << expected << " delivered\n"; // Displays delivered frame.
+                    expected++; // Advances delivery point.
+                }
             }
         }
     }
 
-
-    // -----------------------------------------
-    // ALL FRAMES RECEIVED
-    // -----------------------------------------
-
-    printf("\nAll frames received successfully.\n");
-
-
-    // Close the socket.
-    close(sock);
-
-
-    // End program successfully.
-    return 0;
+    cout << "\n=====================================\n"; // Prints separator.
+    cout << "All frames received successfully.\n"; // Reports successful reception.
+    cout << "=====================================\n"; // Prints separator.
+    close(sock); // Closes socket.
+    return 0; // Ends successfully.
 }
